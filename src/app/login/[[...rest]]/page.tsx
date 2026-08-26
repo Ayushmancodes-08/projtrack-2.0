@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState } from "react"
+import { useClerk } from "@clerk/nextjs"
 import { useAuth } from "@/lib/auth-context"
 import { Shield, Mail, Lock, Key, ArrowRight } from "lucide-react"
 import Link from "next/link"
@@ -10,79 +11,96 @@ import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
 
 export default function LoginPage() {
-  const { loginAsIndependent, loginAsTeamMember, loginWithGoogle } = useAuth()
+  const clerk = useClerk()
+  const { loginAsTeamMember } = useAuth()
   const [loginType, setLoginType] = useState<"independent" | "team">("independent")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [inviteCode, setInviteCode] = useState("")
   const [isLoading, setIsLoading] = useState(false)
 
-  const handleGoogleLogin = async () => {
-    setIsLoading(true)
-    try {
-      await loginWithGoogle()
-    } catch (err: any) {
-      toast.error(err.message || "Failed to initiate Google sign in.")
-      setIsLoading(false)
-    }
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleIndependentSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!email) {
       toast.error("Please enter your email address")
       return
     }
+    if (!password) {
+      toast.error("Please enter your password")
+      return
+    }
+
+    if (!clerk.loaded) return
+    setIsLoading(true)
+
+    try {
+      const result = await clerk.client.signIn.create({
+        identifier: email.trim(),
+        password: password,
+      })
+
+      if (result.status === "complete") {
+        await clerk.setActive({ session: result.createdSessionId })
+        toast.success("Successfully logged in!")
+        window.location.href = "/dashboard"
+      } else {
+        console.warn("Clerk sign-in pending status:", result.status)
+        toast.info("Please check your email to complete verification.")
+      }
+    } catch (err: any) {
+      console.error("Clerk sign in error:", err)
+      const errorMsg = err.errors?.[0]?.longMessage || err.errors?.[0]?.message || err.message || "Authentication failed. Please check your credentials."
+      toast.error(errorMsg)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleTeamSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!email) {
+      toast.error("Please enter your email address")
+      return
+    }
+    if (!inviteCode) {
+      toast.error("Please enter your invite code")
+      return
+    }
 
     setIsLoading(true)
     try {
-      if (loginType === "independent") {
-        if (!password) {
-          toast.error("Please enter your password")
-          setIsLoading(false)
-          return
-        }
-        await loginAsIndependent(email, password)
-        toast.success("Successfully logged in!")
-      } else {
-        if (!inviteCode) {
-          toast.error("Please enter your invite code")
-          setIsLoading(false)
-          return
-        }
-        await loginAsTeamMember(email, inviteCode)
-      }
+      await loginAsTeamMember(email, inviteCode)
     } catch (err: any) {
-      toast.error(err.message || "Authentication failed. Please try again.")
+      toast.error(err.message || "Authentication failed. Please check your invitation code.")
     } finally {
       setIsLoading(false)
     }
   }
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-gradient-to-br from-navy via-[#0D2647] to-navy-light px-4">
-      {/* Background Decorative Circles */}
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-gradient-to-br from-[#07111E] via-[#0B1728] to-[#0A1424] px-4 py-8">
+      {/* Background Decorative Lighting */}
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -left-60 -top-60 h-[500px] w-[500px] rounded-full border border-gold/5 animate-pulse" style={{ animationDuration: "10s" }} />
-        <div className="absolute -bottom-60 -right-60 h-[500px] w-[500px] rounded-full border border-gold/5 animate-pulse" style={{ animationDuration: "15s" }} />
-        <div className="absolute left-1/2 top-1/2 h-[600px] w-[600px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-gold/[0.01] blur-3xl" />
+        <div className="absolute left-1/2 top-1/4 h-[500px] w-[500px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-red-600/[0.04] blur-3xl" />
+        <div className="absolute -bottom-40 -right-40 h-[450px] w-[450px] rounded-full bg-blue-600/[0.03] blur-3xl" />
       </div>
 
-      <div className="relative z-10 mb-6 text-center">
-        <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-gold to-gold-dark shadow-lg shadow-gold/20 transform transition-transform hover:scale-105 duration-300">
-          <Shield className="h-7 w-7 text-navy" />
+      {/* Glowing Red Shield Badge & Header */}
+      <div className="relative z-10 mb-6 text-center flex flex-col items-center">
+        <div className="relative mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-b from-[#EF4444] to-[#B91C1C] shadow-[0_0_35px_rgba(239,68,68,0.45)] transition-transform duration-300 hover:scale-105">
+          <Shield className="h-8 w-8 text-white stroke-[2.2]" />
         </div>
         <h1 className="text-2xl font-bold tracking-tight text-white">projectBeacon</h1>
-        <p className="mt-1 text-xs text-white/50 font-medium tracking-wide uppercase">
-          Autonomous Project Intelligence
+        <p className="mt-1 text-[11px] text-white/55 font-semibold tracking-widest uppercase">
+          AUTONOMOUS PROJECT INTELLIGENCE
         </p>
       </div>
 
-      {/* Main Login Card */}
-      <div className="relative z-10 w-full max-w-md overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-xl shadow-2xl transition-all duration-300 hover:border-white/15">
+      {/* Main Glass Card */}
+      <div className="relative z-10 w-full max-w-md overflow-hidden rounded-2xl border border-white/10 bg-[#0E1A2C]/80 p-7 backdrop-blur-2xl shadow-2xl transition-all duration-300">
         
         {/* Toggle Switch */}
-        <div className="mb-6 flex rounded-lg bg-navy/40 p-1 border border-white/5">
+        <div className="mb-6 flex rounded-xl bg-[#091322] p-1.5 border border-white/5">
           <button
             type="button"
             onClick={() => {
@@ -91,9 +109,9 @@ export default function LoginPage() {
               setPassword("")
               setInviteCode("")
             }}
-            className={`flex-1 rounded-md py-2 text-xs font-semibold tracking-wide transition-all duration-200 cursor-pointer ${
+            className={`flex-1 rounded-lg py-2.5 text-xs font-semibold tracking-wide transition-all duration-200 cursor-pointer ${
               loginType === "independent"
-                ? "bg-gradient-to-r from-gold to-gold-dark text-navy shadow-sm"
+                ? "bg-[#B91C1C] text-white shadow-md"
                 : "text-white/60 hover:text-white"
             }`}
           >
@@ -107,9 +125,9 @@ export default function LoginPage() {
               setPassword("")
               setInviteCode("")
             }}
-            className={`flex-1 rounded-md py-2 text-xs font-semibold tracking-wide transition-all duration-200 cursor-pointer ${
+            className={`flex-1 rounded-lg py-2.5 text-xs font-semibold tracking-wide transition-all duration-200 cursor-pointer ${
               loginType === "team"
-                ? "bg-gradient-to-r from-gold to-gold-dark text-navy shadow-sm"
+                ? "bg-[#B91C1C] text-white shadow-md"
                 : "text-white/60 hover:text-white"
             }`}
           >
@@ -117,138 +135,132 @@ export default function LoginPage() {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium text-white/80">Email Address</Label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
-              <Input
-                type="email"
-                placeholder="you@company.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="h-10 border-white/10 bg-white/5 pl-10 text-sm text-white placeholder:text-white/35 focus:border-gold/50 focus:bg-white/10 focus-visible:ring-gold/20"
-              />
+        {loginType === "independent" ? (
+          <form onSubmit={handleIndependentSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-white/80">Email Address</Label>
+              <div className="relative">
+                <Mail className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+                <Input
+                  type="email"
+                  placeholder="you@company.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="h-11 border-white/10 bg-[#122138]/70 pl-10 text-sm text-white placeholder:text-white/30 focus:border-red-500/50 focus:bg-[#122138] focus-visible:ring-red-500/20"
+                />
+              </div>
             </div>
-          </div>
 
-          {loginType === "independent" ? (
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-medium text-white/80">Password</Label>
                 <Link
                   href="/forgot-password"
-                  className="text-[11px] font-medium text-gold hover:text-gold-light transition-colors"
+                  className="text-[11px] font-medium text-red-400 hover:text-red-300 transition-colors"
                 >
                   Forgot password?
                 </Link>
               </div>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+                <Lock className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
                 <Input
                   type="password"
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="h-10 border-white/10 bg-white/5 pl-10 text-sm text-white placeholder:text-white/35 focus:border-gold/50 focus:bg-white/10 focus-visible:ring-gold/20"
+                  className="h-11 border-white/10 bg-[#122138]/70 pl-10 text-sm text-white placeholder:text-white/30 focus:border-red-500/50 focus:bg-[#122138] focus-visible:ring-red-500/20"
                 />
               </div>
             </div>
-          ) : (
+
+            {/* Clerk Bot Protection CAPTCHA container */}
+            <div id="clerk-captcha" className="my-1 flex justify-center" />
+
+            <Button
+              type="submit"
+              disabled={isLoading}
+              className="w-full h-11 mt-2 bg-[#B91C1C] hover:bg-[#DC2626] text-white font-bold text-sm tracking-wide shadow-lg shadow-red-900/30 transition-all duration-200 cursor-pointer disabled:opacity-50"
+            >
+              {isLoading ? (
+                "Authenticating..."
+              ) : (
+                <span className="flex items-center justify-center gap-1.5">
+                  Sign In
+                  <ArrowRight className="h-4 w-4" />
+                </span>
+              )}
+            </Button>
+
+            <div className="mt-5 text-center text-xs text-white/50">
+              Don&apos;t have an account?{" "}
+              <Link
+                href="/signup"
+                className="font-semibold text-red-400 hover:text-red-300 transition-colors"
+              >
+                Sign Up
+              </Link>
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={handleTeamSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-white/80">Email Address</Label>
+              <div className="relative">
+                <Mail className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+                <Input
+                  type="email"
+                  placeholder="you@company.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="h-11 border-white/10 bg-[#122138]/70 pl-10 text-sm text-white placeholder:text-white/30 focus:border-red-500/50 focus:bg-[#122138] focus-visible:ring-red-500/20"
+                />
+              </div>
+            </div>
+
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-white/80">Invite Code</Label>
               <div className="relative">
-                <Key className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+                <Key className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
                 <Input
                   type="text"
                   placeholder="PT-XXXXXX"
                   value={inviteCode}
                   onChange={(e) => setInviteCode(e.target.value)}
                   required
-                  className="h-10 border-white/10 bg-white/5 pl-10 text-sm text-white placeholder:text-white/35 font-mono focus:border-gold/50 focus:bg-white/10 focus-visible:ring-gold/20"
+                  className="h-11 border-white/10 bg-[#122138]/70 pl-10 text-sm text-white placeholder:text-white/30 font-mono focus:border-red-500/50 focus:bg-[#122138] focus-visible:ring-red-500/20"
                 />
               </div>
-              <p className="text-[10px] text-white/40 leading-normal mt-1">
+              <p className="text-[11px] text-white/45 leading-relaxed mt-1">
                 Enter the code sent to you by your team administrator.
               </p>
             </div>
-          )}
-
-          <Button
-            type="submit"
-            disabled={isLoading}
-            className="w-full h-10 mt-2 bg-gradient-to-r from-gold to-gold-dark hover:from-gold-light hover:to-gold text-navy font-bold text-sm tracking-wide shadow-md transition-all duration-200 cursor-pointer disabled:opacity-50"
-          >
-            {isLoading ? (
-              "Authenticating..."
-            ) : (
-              <span className="flex items-center justify-center gap-1.5">
-                {loginType === "independent" ? "Sign In" : "Join Team"}
-                <ArrowRight className="h-4 w-4" />
-              </span>
-            )}
-          </Button>
-        </form>
-
-        {loginType === "independent" && (
-          <>
-            <div className="relative my-4 flex items-center justify-center">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-white/10"></div>
-              </div>
-              <span className="relative bg-[#0d213d] px-3 text-[11px] font-medium text-white/40 uppercase tracking-wider">
-                Or continue with
-              </span>
-            </div>
 
             <Button
-              type="button"
-              onClick={handleGoogleLogin}
+              type="submit"
               disabled={isLoading}
-              className="w-full h-10 bg-white/5 hover:bg-white/10 text-white border border-white/10 font-medium text-sm tracking-wide shadow-sm transition-all duration-200 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+              className="w-full h-11 mt-2 bg-[#B91C1C] hover:bg-[#DC2626] text-white font-bold text-sm tracking-wide shadow-lg shadow-red-900/30 transition-all duration-200 cursor-pointer disabled:opacity-50"
             >
-              <svg className="h-4 w-4" viewBox="0 0 24 24">
-                <path
-                  fill="currentColor"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                />
-                <path
-                  fill="currentColor"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="currentColor"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                />
-                <path
-                  fill="currentColor"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                />
-              </svg>
-              <span>Sign In with Google</span>
+              {isLoading ? (
+                "Authenticating..."
+              ) : (
+                <span className="flex items-center justify-center gap-1.5">
+                  Join Team
+                  <ArrowRight className="h-4 w-4" />
+                </span>
+              )}
             </Button>
-          </>
-        )}
-
-        {/* Footer Link */}
-        {loginType === "independent" && (
-          <div className="mt-5 text-center text-xs text-white/40">
-            Don&apos;t have an account?{" "}
-            <Link
-              href="/signup"
-              className="font-semibold text-gold hover:text-gold-light transition-colors"
-            >
-              Sign Up
-            </Link>
-          </div>
+          </form>
         )}
       </div>
 
-      <p className="relative z-10 mt-8 text-[10px] text-white/20 font-medium tracking-wider uppercase">
-        &copy; {new Date().getFullYear()} ProjTrack. All rights reserved.
+      <p className="relative z-10 mt-8 text-[11px] text-white/30 font-medium tracking-wider uppercase">
+        &copy; 2026 PROJTRACK. ALL RIGHTS RESERVED.
       </p>
     </div>
   )
 }
+
+

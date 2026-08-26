@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { useUser, useClerk } from "@clerk/nextjs"
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
 import type { Role } from "@/lib/types"
@@ -54,6 +55,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [isLoaded, setIsLoaded] = useState(false)
   const router = useRouter()
+  const clerk = useClerk()
+  const { user: clerkUser, isLoaded: isClerkLoaded, isSignedIn: isClerkSignedIn } = useUser()
   const supabase = createClient()
 
   const checkSession = async () => {
@@ -82,17 +85,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // 2. Check Supabase Auth Session for Independent User
+      // 2. Check Clerk User
+      if (isClerkLoaded && isClerkSignedIn && clerkUser) {
+        const primaryEmail = clerkUser.primaryEmailAddress?.emailAddress || ""
+        const displayName = clerkUser.fullName || clerkUser.firstName || primaryEmail.split("@")[0] || "User"
+        
+        setUser({
+          id: clerkUser.id,
+          email: primaryEmail,
+          fullName: displayName,
+          avatarUrl: clerkUser.imageUrl || null,
+          role: "OWNER",
+          isTeamMember: false,
+          organizationId: clerkUser.id,
+        })
+        setLoading(false)
+        setIsLoaded(true)
+        return
+      }
+
+      // 3. Fallback: Check Supabase Auth Session
       const { data: { session } } = await supabase.auth.getSession()
       if (session?.user) {
-        // Fetch profile
         let { data: profile } = await supabase
           .from("profiles")
           .select("*")
           .eq("id", session.user.id)
           .maybeSingle()
 
-        // Auto-provision profile if it doesn't exist
         if (!profile) {
           try {
             const fullName = session.user.user_metadata?.full_name || session.user.email?.split("@")[0] || "Independent User"
@@ -120,11 +140,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           email: session.user.email || "",
           fullName: profile?.full_name || session.user.user_metadata?.full_name || session.user.email?.split("@")[0] || "Independent User",
           avatarUrl: profile?.avatar_url || null,
-          role: "OWNER", // Independent users are OWNERS of their workspace
+          role: "OWNER",
           isTeamMember: false,
-          organizationId: session.user.id, // Their organization ID is their user ID
+          organizationId: session.user.id,
         })
-      } else {
+      } else if (!isClerkSignedIn) {
         setUser(null)
       }
     } catch (error) {
@@ -138,28 +158,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     checkSession()
-
-    // Listen for Supabase auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === "SIGNED_OUT") {
-        setUser(null)
-      } else if (session?.user) {
-        // Only trigger checkSession if not currently logged in as a team member
-        const teamSessionStr = getCookie("projtrack_team_session")
-        if (!teamSessionStr) {
-          await checkSession()
-        }
-      }
-    })
-
-    return () => {
-      subscription.unsubscribe()
-    }
-  }, [])
+  }, [isClerkLoaded, isClerkSignedIn, clerkUser])
 
   const loginAsIndependent = async (email: string, password: string) => {
     setLoading(true)
-    // Clear any existing team session first
     deleteCookie("projtrack_team_session")
 
     const { error } = await supabase.auth.signInWithPassword({ email, password })
@@ -191,7 +193,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (data.user) {
-      // Create profile in profiles table
       await supabase.from("profiles").upsert({
         id: data.user.id,
         email: email,
@@ -207,7 +208,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loginAsTeamMember = async (email: string, code: string) => {
     setLoading(true)
     
-    // Check team_invitations table for matching email and code
     const { data: invitation, error } = await supabase
       .from("team_invitations")
       .select("*")
@@ -220,10 +220,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error("Invalid email or invitation code. Please check and try again.")
     }
 
-    // Sign out of Supabase Auth if currently signed in
+    // Sign out of Supabase & Clerk if currently signed in
+    try {
+      await clerk.signOut()
+    } catch {}
     await supabase.auth.signOut()
 
-    // Ensure they are recorded in the workspace_members table (idempotent)
     try {
       const { data: existingMember } = await supabase
         .from("workspace_members")
@@ -233,7 +235,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .maybeSingle()
 
       if (!existingMember) {
-        // First login: create workspace member row
         await supabase.from("workspace_members").insert({
           workspace_id: invitation.organization_id,
           email: invitation.email.trim().toLowerCase(),
@@ -242,18 +243,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           created_at: new Date().toISOString()
         })
 
-        // Mark the invitation as accepted only on the first successful login
         await supabase
           .from("team_invitations")
           .update({ accepted: true })
           .eq("id", invitation.id)
       }
-      // If existingMember exists, this is a re-login — code is already static & valid, no DB changes needed
     } catch (dbErr) {
       console.warn("Failed to check/insert workspace member in database:", dbErr)
     }
 
-    // Store team member session in cookie
     const sessionData = {
       email: invitation.email,
       role: invitation.role,
@@ -263,7 +261,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     
     setCookie("projtrack_team_session", JSON.stringify(sessionData), 7)
     
-    // Set user state
     setUser({
       id: `team-${invitation.email}-${invitation.organization_id}`,
       email: invitation.email,
@@ -299,6 +296,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     setLoading(true)
     deleteCookie("projtrack_team_session")
+    try {
+      await clerk.signOut()
+    } catch {}
     await supabase.auth.signOut()
     setUser(null)
     setLoading(false)
@@ -335,3 +335,4 @@ export function useAuth() {
   }
   return context
 }
+
