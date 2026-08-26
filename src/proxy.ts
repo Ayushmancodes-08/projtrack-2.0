@@ -13,21 +13,22 @@ const isPublicRoute = createRouteMatcher([
 
 export default clerkMiddleware(
   async (auth, request) => {
-    const teamSession = request.cookies.get("projtrack_team_session")?.value
+    try {
+      const teamSession = request.cookies.get("projtrack_team_session")?.value
 
-    if (!isPublicRoute(request) && !teamSession) {
-      await auth.protect({
-        unauthenticatedUrl: new URL("/login", request.url).toString(),
-      })
+      if (!isPublicRoute(request) && !teamSession) {
+        await auth.protect({
+          unauthenticatedUrl: new URL("/login", request.url).toString(),
+        })
+      }
+    } catch (err) {
+      console.error("Middleware auth error:", err)
+      // Allow request to proceed or let client-side auth handle fallback
     }
   },
   {
-    publishableKey:
-      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
-      "pk_test_Y2VudHJhbC1iYXQtMzYuY2xlcmsuYWNjb3VudHMuZGV2JA",
-    secretKey:
-      process.env.CLERK_SECRET_KEY ||
-      "sk_test_oJETMdeoFNuGl8KMWoU0t72ahFmIlBGfZCyFYZqvtd",
+    publishableKey: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
+    secretKey: process.env.CLERK_SECRET_KEY,
   }
 )
 
