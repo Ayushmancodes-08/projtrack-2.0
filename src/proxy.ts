@@ -13,14 +13,24 @@ function isPublicRoute(pathname: string): boolean {
   return PUBLIC_PATTERNS.some((pattern) => pattern.test(pathname))
 }
 
-export default clerkMiddleware(async (auth, request) => {
-  const { pathname } = request.nextUrl
-  const teamSession = request.cookies.get("projtrack_team_session")?.value
+export default clerkMiddleware(
+  async (auth, request) => {
+    const { pathname } = request.nextUrl
+    const teamSession = request.cookies.get("projtrack_team_session")?.value
 
-  if (!isPublicRoute(pathname) && !teamSession) {
-    await auth.protect()
+    if (!isPublicRoute(pathname) && !teamSession) {
+      await auth.protect()
+    }
+  },
+  {
+    publishableKey:
+      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
+      "pk_test_Y2VudHJhbC1iYXQtMzYuY2xlcmsuYWNjb3VudHMuZGV2JA",
+    secretKey:
+      process.env.CLERK_SECRET_KEY ||
+      "sk_test_oJETMdeoFNuGl8KMWoU0t72ahFmIlBGfZCyFYZqvtd",
   }
-})
+)
 
 export const config = {
   matcher: [
