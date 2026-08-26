@@ -25,9 +25,16 @@ function getSocket(): Socket {
       path: "/api/socket",
       addTrailingSlash: false,
       transports: ["websocket", "polling"],
+      autoConnect: true,
       reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000,
+      reconnectionAttempts: 3,
+      reconnectionDelay: 2000,
+      timeout: 4000,
+    })
+
+    globalSocket.on("connect_error", (err) => {
+      // Gracefully handle missing custom socket server in serverless/Vercel deployments
+      console.debug("[Socket.io] Realtime fallback to database sync:", err.message)
     })
 
     // Re-join all tracked rooms after a reconnect
