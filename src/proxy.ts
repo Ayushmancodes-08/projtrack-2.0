@@ -1,25 +1,24 @@
-import { clerkMiddleware } from "@clerk/nextjs/server"
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server"
 
-const PUBLIC_PATTERNS = [
-  /^\/$/,
-  /^\/login(?:\/.*)?$/,
-  /^\/signup(?:\/.*)?$/,
-  /^\/forgot-password(?:\/.*)?$/,
-  /^\/api\/public(?:\/.*)?$/,
-  /^\/api\/send-invite(?:\/.*)?$/,
-]
-
-function isPublicRoute(pathname: string): boolean {
-  return PUBLIC_PATTERNS.some((pattern) => pattern.test(pathname))
-}
+const isPublicRoute = createRouteMatcher([
+  "/",
+  "/login(.*)",
+  "/signup(.*)",
+  "/forgot-password(.*)",
+  "/auth(.*)",
+  "/api/send-invite(.*)",
+  "/api/public(.*)",
+  "/api/socket(.*)",
+])
 
 export default clerkMiddleware(
   async (auth, request) => {
-    const { pathname } = request.nextUrl
     const teamSession = request.cookies.get("projtrack_team_session")?.value
 
-    if (!isPublicRoute(pathname) && !teamSession) {
-      await auth.protect()
+    if (!isPublicRoute(request) && !teamSession) {
+      await auth.protect({
+        unauthenticatedUrl: new URL("/login", request.url).toString(),
+      })
     }
   },
   {
